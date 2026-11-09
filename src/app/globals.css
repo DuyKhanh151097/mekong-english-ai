@@ -1,0 +1,75 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/*
+ * DESIGN SYSTEM – MEKONG English AI
+ * Dùng các class dưới đây thay vì tự viết lại để giao diện đồng nhất:
+ *   Nút:   .btn + (.btn-primary | .btn-secondary | .btn-outline | .btn-ghost | .btn-accent | .btn-danger) + (.btn-sm | .btn-lg)
+ *   Thẻ:   .card  (.card-hover để có hiệu ứng nổi)
+ *   Form:  .label .input .select .textarea .help
+ *   Nhãn:  .badge + (.badge-green | .badge-gold | .badge-orange | .badge-gray | .badge-red | .badge-blue)
+ *   Khác:  .section .section-title .section-sub .eyebrow .table .chip
+ */
+
+@layer base {
+  html { scroll-behavior: smooth; }
+  body { @apply bg-surface text-ink antialiased; }
+  h1, h2, h3, h4 { @apply font-bold tracking-tight text-ink; }
+  :focus-visible { @apply outline-none ring-2 ring-brand-500 ring-offset-2; }
+}
+
+@layer components {
+  .btn {
+    @apply inline-flex min-h-[44px] items-center justify-center gap-2 rounded-xl px-5 py-2.5 text-sm font-semibold transition
+      disabled:cursor-not-allowed disabled:opacity-50 active:scale-[.98] whitespace-nowrap shrink-0;
+  }
+  .btn-sm { @apply min-h-[36px] px-3 py-1.5 text-xs whitespace-nowrap shrink-0; }
+  .btn-lg { @apply min-h-[52px] px-7 py-3 text-base whitespace-nowrap shrink-0; }
+  .btn-primary { @apply bg-brand-600 text-white shadow-sm hover:bg-brand-700; }
+  .btn-secondary { @apply bg-brand-50 text-brand-700 hover:bg-brand-100; }
+  .btn-outline { @apply border border-slate-300 bg-white text-ink hover:border-brand-600 hover:text-brand-700; }
+  .btn-ghost { @apply text-slate-700 hover:bg-slate-100; }
+  .btn-accent { @apply bg-rice-500 text-ink shadow-sm hover:bg-rice-600; }
+  .btn-orange { @apply bg-silt-500 text-white shadow-sm hover:bg-silt-600; }
+  .btn-danger { @apply bg-red-600 text-white hover:bg-red-700; }
+
+  .card { @apply rounded-2xl border border-slate-200/70 bg-white shadow-card; }
+  .card-hover { @apply transition hover:-translate-y-0.5 hover:shadow-soft; }
+
+  .label { @apply mb-1.5 block text-sm font-medium text-slate-700; }
+  .input, .select, .textarea {
+    @apply block w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-sm text-ink placeholder:text-slate-400
+      focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20;
+  }
+  .textarea { @apply min-h-[96px]; }
+  .help { @apply mt-1 text-xs text-slate-500; }
+
+  .badge { @apply inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-semibold whitespace-nowrap shrink-0; }
+  .badge-green { @apply bg-brand-50 text-brand-700; }
+  .badge-gold { @apply bg-rice-100 text-amber-800; }
+  .badge-orange { @apply bg-orange-100 text-orange-700; }
+  .badge-gray { @apply bg-slate-100 text-slate-600; }
+  .badge-red { @apply bg-red-100 text-red-700; }
+  .badge-blue { @apply bg-sky-100 text-sky-700; }
+
+  .chip { @apply inline-flex items-center rounded-full border border-slate-200 bg-white px-3 py-1 text-sm text-slate-700; }
+
+  .section { @apply py-16 md:py-20; }
+  .eyebrow { @apply mb-3 inline-block rounded-full bg-brand-50 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-brand-700; }
+  .section-title { @apply text-2xl font-extrabold md:text-4xl; }
+  .section-sub { @apply mt-3 max-w-2xl text-base text-slate-600 md:text-lg; }
+
+  .table { @apply w-full text-left text-sm; }
+  .table thead th { @apply border-b border-slate-200 bg-slate-50 px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500; }
+  .table tbody td { @apply border-b border-slate-100 px-4 py-3 align-middle; }
+  .table tbody tr:hover { @apply bg-slate-50/60; }
+}
+
+@layer utilities {
+  .bg-mekong { background: linear-gradient(135deg, #0F9D58 0%, #0EA5A4 100%); }
+  .bg-mekong-soft { background: radial-gradient(1200px 500px at 10% -10%, #D1FADF 0%, transparent 60%), radial-gradient(900px 400px at 100% 0%, #FEF3C7 0%, transparent 55%), #F8FAF9; }
+  .text-balance { text-wrap: balance; }
+  .scrollbar-none::-webkit-scrollbar { display: none; }
+  .scrollbar-none { scrollbar-width: none; }
+}

@@ -1,0 +1,647 @@
+// MEKONG English AI – Lược đồ cơ sở dữ liệu
+// Phát triển: SQLite. Production: đổi provider = "postgresql" và DATABASE_URL tương ứng.
+// Lưu ý: SQLite không hỗ trợ enum/Json trong Prisma => dùng String; các trường *Json lưu chuỗi JSON.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ───────────────────────── NGƯỜI DÙNG & TỔ CHỨC ─────────────────────────
+
+/// role: STUDENT | PARENT | TEACHER | TUTOR | SCHOOL_ADMIN | EDITOR | SALES | ADMIN
+/// status: ACTIVE | LOCKED
+model User {
+  id             String    @id @default(cuid())
+  name           String
+  email          String?   @unique
+  phone          String?   @unique
+  username       String?   @unique // tài khoản học sinh do trường cấp (đăng nhập phòng máy)
+  passwordHash   String
+  role           String    @default("STUDENT")
+  status         String    @default("ACTIVE")
+  avatar         String?
+  grade          Int?
+  birthYear      Int?
+  organizationId String?
+  organization   Organization? @relation(fields: [organizationId], references: [id])
+  xp             Int       @default(0)
+  streak         Int       @default(0)
+  liveCredits    Int       @default(0) // số buổi Live Speaking còn lại
+  lastActiveAt   DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  childrenLinks   ParentLink[]      @relation("ParentLinks")
+  parentLinks     ParentLink[]      @relation("StudentLinks")
+  consents        Consent[]         @relation("ConsentStudent")
+  teachingClasses Classroom[]       @relation("ClassTeacher")
+  classMembers    ClassMember[]
+  lessonProgress  LessonProgress[]
+  studySessions   StudySession[]
+  speaking        SpeakingAttempt[]
+  scenarioProgress ScenarioProgress[]
+  submissions     TaskSubmission[]
+  bookings        Booking[]
+  subscriptions   Subscription[]
+  orders          Order[]
+  tutorProfile    Tutor?
+  weeklyReports   WeeklyReport[]
+  assessments     Assessment[]      @relation("AssessmentStudent")
+  auditLogs       AuditLog[]
+}
+
+model ParentLink {
+  id        String   @id @default(cuid())
+  parentId  String
+  studentId String
+  parent    User     @relation("ParentLinks", fields: [parentId], references: [id], onDelete: Cascade)
+  student   User     @relation("StudentLinks", fields: [studentId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([parentId, studentId])
+}
+
+/// Đồng ý thu thập dữ liệu (Nghị định 13/2023/NĐ-CP). type: VOICE_RECORDING | DATA_PROCESSING
+model Consent {
+  id            String   @id @default(cuid())
+  studentId     String
+  student       User     @relation("ConsentStudent", fields: [studentId], references: [id], onDelete: Cascade)
+  grantedById   String?
+  type          String   @default("VOICE_RECORDING")
+  granted       Boolean  @default(false)
+  retentionDays Int      @default(180)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+/// type: SCHOOL | CENTER | COMPANY ; status: TRIAL | ACTIVE | EXPIRED
+model Organization {
+  id               String    @id @default(cuid())
+  name             String
+  type             String    @default("SCHOOL")
+  address          String?
+  province         String    @default("An Giang")
+  contactName      String?
+  contactPhone     String?
+  contactEmail     String?
+  licenseSeats     Int       @default(0)
+  licenseExpiresAt DateTime?
+  status           String    @default("TRIAL")
+  createdAt        DateTime  @default(now())
+
+  users      User[]
+  classrooms Classroom[]
+}
+
+/// pilotGroup: NONE | EXPERIMENT | CONTROL (phục vụ đánh giá thí điểm)
+model Classroom {
+  id             String        @id @default(cuid())
+  name           String
+  code           String        @unique // mã lớp để học sinh tham gia
+  grade          Int           @default(6)
+  schoolYear     String        @default("2026-2027")
+  organizationId String?
+  organization   Organization? @relation(fields: [organizationId], references: [id])
+  teacherId      String?
+  teacher        User?         @relation("ClassTeacher", fields: [teacherId], references: [id])
+  pilotGroup     String        @default("NONE")
+  leaderboardOn  Boolean       @default(true)
+  createdAt      DateTime      @default(now())
+
+  members     ClassMember[]
+  assignments Assignment[]
+}
+
+model ClassMember {
+  id          String    @id @default(cuid())
+  classroomId String
+  studentId   String
+  classroom   Classroom @relation(fields: [classroomId], references: [id], onDelete: Cascade)
+  student     User      @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  joinedAt    DateTime  @default(now())
+
+  @@unique([classroomId, studentId])
+}
+
+// ───────────────────────── HỌC LIỆU ─────────────────────────
+
+/// package: SCHOOL | CAREER | COMMUNITY ; status: DRAFT | REVIEW | PUBLISHED
+model Course {
+  id             String    @id @default(cuid())
+  slug           String    @unique
+  title          String
+  subtitle       String?
+  description    String?
+  package        String    @default("SCHOOL")
+  grade          Int?
+  levelLabel     String?   // VD: "Lớp 6", "A1", "Mới bắt đầu"
+  coverImage     String?
+  introVideoUrl  String?
+  objectivesJson String    @default("[]") // string[]
+  price          Int       @default(0)
+  salePrice      Int?
+  isFree         Boolean   @default(false)
+  status         String    @default("DRAFT")
+  order          Int       @default(0)
+  teacherName    String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  chapters Chapter[]
+  tasks    RealTask[]
+}
+
+model Chapter {
+  id       String   @id @default(cuid())
+  courseId String
+  course   Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  title    String
+  topic    String?
+  order    Int      @default(0)
+  lessons  Lesson[]
+}
+
+/// type: VIDEO | EXERCISE | SPEAKING | TASK | DAILY (buổi học 15 phút ghép 5 bước)
+/// contentJson: { vocab: [{word, ipa, meaning, example}], sentences: [{en, vi}], dialogue: [{speaker, en, vi}], tipVi: string }
+model Lesson {
+  id            String    @id @default(cuid())
+  chapterId     String
+  chapter       Chapter   @relation(fields: [chapterId], references: [id], onDelete: Cascade)
+  title         String
+  summary       String?
+  type          String    @default("DAILY")
+  isFreePreview Boolean   @default(false)
+  order         Int       @default(0)
+  durationMin   Int       @default(15)
+  image         String?
+  contentJson   String    @default("{}")
+  videoId       String?
+  video         Video?    @relation(fields: [videoId], references: [id])
+  scenarioId    String?
+  scenario      Scenario? @relation(fields: [scenarioId], references: [id])
+  status        String    @default("PUBLISHED")
+  createdAt     DateTime  @default(now())
+
+  questions   Question[]
+  progress    LessonProgress[]
+  assignments Assignment[]
+}
+
+/// provider: MP4 | HLS | YOUTUBE ; status: PROCESSING | READY
+model Video {
+  id          String   @id @default(cuid())
+  title       String
+  url         String
+  provider    String   @default("MP4")
+  thumbnail   String?
+  durationSec Int      @default(0)
+  subtitleEn  String?  // nội dung WebVTT
+  subtitleVi  String?
+  views       Int      @default(0)
+  completions Int      @default(0)
+  status      String   @default("READY")
+  createdAt   DateTime @default(now())
+
+  lessons Lesson[]
+}
+
+/// type: MCQ | FILL | ORDER | LISTEN | SPEAK ; skill: VOCAB | GRAMMAR | LISTENING | SPEAKING
+/// optionsJson: string[] ; answer: đáp án đúng (MCQ/LISTEN: chuỗi đúng; ORDER: câu hoàn chỉnh; FILL: từ cần điền)
+model Question {
+  id          String   @id @default(cuid())
+  lessonId    String?
+  lesson      Lesson?  @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+  type        String   @default("MCQ")
+  prompt      String
+  optionsJson String   @default("[]")
+  answer      String
+  explanation String?
+  audioText   String?  // văn bản để đọc bằng TTS (bài nghe)
+  skill       String   @default("VOCAB")
+  topic       String?
+  difficulty  Int      @default(1)
+  createdAt   DateTime @default(now())
+}
+
+/// Tình huống luyện nói với gia sư AI, có 3 mức trợ giúp (scaffolding)
+/// keywordsJson: string[] ; framesJson: string[] (mức 1 – khung câu) ; hintsJson: string[] (mức 2 – gợi ý)
+/// followUpsJson: string[] (mức 3 – câu hỏi mở rộng) ; modelAnswer: câu mẫu
+model Scenario {
+  id            String   @id @default(cuid())
+  slug          String   @unique
+  title         String
+  titleVi       String?
+  topic         String   @default("Giới thiệu")
+  image         String?
+  goalVi        String   // mục tiêu giao tiếp (tiếng Việt)
+  contextVi     String?  // bối cảnh
+  aiOpening     String   // câu mở đầu của AI (tiếng Anh)
+  keywordsJson  String   @default("[]")
+  framesJson    String   @default("[]")
+  hintsJson     String   @default("[]")
+  followUpsJson String   @default("[]")
+  modelAnswer   String?
+  systemPrompt  String?
+  passThreshold Int      @default(70)
+  isTransfer    Boolean  @default(false) // tình huống mới, chưa luyện nguyên mẫu (đo vận dụng)
+  grade         Int?
+  package       String   @default("SCHOOL")
+  status        String   @default("PUBLISHED")
+  order         Int      @default(0)
+  createdAt     DateTime @default(now())
+
+  lessons     Lesson[]
+  attempts    SpeakingAttempt[]
+  progress    ScenarioProgress[]
+  assignments Assignment[]
+}
+
+/// rubricJson: [{criterion, maxScore, descriptionVi}]
+model RealTask {
+  id            String   @id @default(cuid())
+  courseId      String?
+  course        Course?  @relation(fields: [courseId], references: [id], onDelete: SetNull)
+  title         String
+  descriptionVi String
+  topic         String?
+  image         String?
+  isTransfer    Boolean  @default(false)
+  rubricJson    String   @default("[]")
+  order         Int      @default(0)
+  status        String   @default("PUBLISHED")
+  createdAt     DateTime @default(now())
+
+  submissions TaskSubmission[]
+}
+
+/// Thư viện học liệu địa phương (ảnh, audio, câu chuyện) có nguồn & quyền sử dụng
+model MediaAsset {
+  id          String   @id @default(cuid())
+  title       String
+  type        String   @default("IMAGE") // IMAGE | AUDIO | STORY | VIDEO
+  url         String?
+  content     String?
+  topic       String?
+  source      String?  // nguồn: tự sản xuất, SmartTourism AI, Coop360, TraceHub...
+  license     String?  // quyền sử dụng
+  verified    Boolean  @default(false)
+  verifiedBy  String?
+  tags        String?
+  createdAt   DateTime @default(now())
+}
+
+// ───────────────────────── TIẾN ĐỘ HỌC TẬP ─────────────────────────
+
+model LessonProgress {
+  id          String   @id @default(cuid())
+  userId      String
+  lessonId    String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  lesson      Lesson   @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+  completed   Boolean  @default(false)
+  score       Int      @default(0)
+  videoPct    Int      @default(0)
+  updatedAt   DateTime @updatedAt
+
+  @@unique([userId, lessonId])
+}
+
+/// Một buổi học 15 phút
+model StudySession {
+  id             String   @id @default(cuid())
+  userId         String
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  lessonId       String?
+  minutes        Int      @default(0)
+  stepsCompleted Int      @default(0)
+  score          Int      @default(0)
+  summaryVi      String?
+  nextFocusVi    String?
+  createdAt      DateTime @default(now())
+}
+
+/// scoresJson: { meaning, clarity, vocabulary, structure, overall } ; correctionsJson: [{wrong, right, explainVi}]
+model SpeakingAttempt {
+  id              String    @id @default(cuid())
+  userId          String
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  scenarioId      String?
+  scenario        Scenario? @relation(fields: [scenarioId], references: [id], onDelete: SetNull)
+  scaffoldLevel   Int       @default(1)
+  transcript      String
+  scoresJson      String    @default("{}")
+  overall         Int       @default(0)
+  feedbackVi      String?
+  correctionsJson String    @default("[]")
+  teacherScore    Int?
+  teacherNote     String?
+  noisy           Boolean   @default(false)
+  provider        String    @default("RULES") // RULES | GEMINI
+  createdAt       DateTime  @default(now())
+}
+
+/// Mức trợ giúp hiện tại của học sinh theo từng tình huống (cơ chế thích ứng)
+model ScenarioProgress {
+  id            String   @id @default(cuid())
+  userId        String
+  scenarioId    String
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  scenario      Scenario @relation(fields: [scenarioId], references: [id], onDelete: Cascade)
+  scaffoldLevel Int      @default(1)
+  passStreak    Int      @default(0)
+  failStreak    Int      @default(0)
+  bestScore     Int      @default(0)
+  attempts      Int      @default(0)
+  updatedAt     DateTime @updatedAt
+
+  @@unique([userId, scenarioId])
+}
+
+/// status: SUBMITTED | REVIEWED
+model TaskSubmission {
+  id              String   @id @default(cuid())
+  taskId          String
+  userId          String
+  task            RealTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  transcript      String
+  audioUrl        String?
+  aiScore         Int      @default(0)
+  aiFeedbackVi    String?
+  teacherScore    Int?
+  teacherFeedback String?
+  status          String   @default("SUBMITTED")
+  createdAt       DateTime @default(now())
+}
+
+model Assignment {
+  id          String    @id @default(cuid())
+  classroomId String
+  classroom   Classroom @relation(fields: [classroomId], references: [id], onDelete: Cascade)
+  title       String
+  lessonId    String?
+  lesson      Lesson?   @relation(fields: [lessonId], references: [id], onDelete: SetNull)
+  scenarioId  String?
+  scenario    Scenario? @relation(fields: [scenarioId], references: [id], onDelete: SetNull)
+  note        String?
+  dueAt       DateTime?
+  createdAt   DateTime  @default(now())
+}
+
+model WeeklyReport {
+  id         String    @id @default(cuid())
+  studentId  String
+  student    User      @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  weekStart  DateTime
+  sessions   Int       @default(0)
+  minutes    Int       @default(0)
+  canDoVi    String?
+  needVi     String?
+  sentAt     DateTime?
+  createdAt  DateTime  @default(now())
+}
+
+// ───────────────────────── LIVE SPEAKING (TRẢ PHÍ THÊM) ─────────────────────────
+
+/// status: PENDING | APPROVED | HIDDEN
+model Tutor {
+  id              String   @id @default(cuid())
+  userId          String?  @unique
+  user            User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  slug            String   @unique
+  name            String
+  avatar          String?
+  headline        String?
+  bio             String?
+  gender          String?
+  nationality     String   @default("Việt Nam")
+  certificates    String?  // "IELTS 8.0, TESOL"
+  specialties     String?  // "Phát âm, Giao tiếp THCS"
+  videoUrl        String?
+  pricePerSession Int      @default(150000)
+  revenueShare    Int      @default(60) // % giáo viên nhận
+  rating          Float    @default(5)
+  ratingCount     Int      @default(0)
+  status          String   @default("APPROVED")
+  createdAt       DateTime @default(now())
+
+  slots TutorSlot[]
+}
+
+/// type: ONE_ON_ONE | GROUP ; status: OPEN | FULL | CANCELLED | DONE
+model TutorSlot {
+  id          String    @id @default(cuid())
+  tutorId     String
+  tutor       Tutor     @relation(fields: [tutorId], references: [id], onDelete: Cascade)
+  startAt     DateTime
+  durationMin Int       @default(25)
+  type        String    @default("ONE_ON_ONE")
+  capacity    Int       @default(1)
+  topic       String?
+  meetingUrl  String?
+  status      String    @default("OPEN")
+  createdAt   DateTime  @default(now())
+
+  bookings Booking[]
+}
+
+/// status: BOOKED | COMPLETED | CANCELLED | NO_SHOW
+model Booking {
+  id          String    @id @default(cuid())
+  slotId      String
+  userId      String
+  slot        TutorSlot @relation(fields: [slotId], references: [id], onDelete: Cascade)
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  status      String    @default("BOOKED")
+  note        String?
+  tutorFeedback String?
+  rating      Int?
+  review      String?
+  createdAt   DateTime  @default(now())
+}
+
+// ───────────────────────── BÁN HÀNG ─────────────────────────
+
+/// type: FREE | SUBSCRIPTION | LIVE_PACK | B2B ; tier: VIDEO | AI (quyền truy cập của gói thuê bao)
+/// featuresJson: string[]
+model Plan {
+  id           String   @id @default(cuid())
+  code         String   @unique
+  name         String
+  type         String   @default("SUBSCRIPTION")
+  tier         String?
+  description  String?
+  featuresJson String   @default("[]")
+  price        Int      @default(0)
+  salePrice    Int?
+  durationDays Int      @default(30)
+  sessions     Int      @default(0) // số buổi Live (gói LIVE_PACK)
+  isFeatured   Boolean  @default(false)
+  isActive     Boolean  @default(true)
+  order        Int      @default(0)
+  createdAt    DateTime @default(now())
+
+  subscriptions Subscription[]
+  orders        Order[]
+}
+
+/// status: ACTIVE | EXPIRED | CANCELLED
+model Subscription {
+  id        String   @id @default(cuid())
+  userId    String
+  planId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  plan      Plan     @relation(fields: [planId], references: [id])
+  startAt   DateTime @default(now())
+  endAt     DateTime
+  status    String   @default("ACTIVE")
+  createdAt DateTime @default(now())
+}
+
+/// method: VNPAY | MOMO | ZALOPAY | VIETQR ; status: PENDING | PAID | CANCELLED | REFUNDED
+model Order {
+  id            String    @id @default(cuid())
+  code          String    @unique
+  userId        String?
+  user          User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+  planId        String?
+  plan          Plan?     @relation(fields: [planId], references: [id], onDelete: SetNull)
+  customerName  String
+  phone         String?
+  email         String?
+  amount        Int
+  discount      Int       @default(0)
+  total         Int
+  couponCode    String?
+  method        String    @default("VIETQR")
+  status        String    @default("PENDING")
+  note          String?
+  paidAt        DateTime?
+  createdAt     DateTime  @default(now())
+}
+
+model Coupon {
+  id        String    @id @default(cuid())
+  code      String    @unique
+  percent   Int       @default(0)
+  amount    Int       @default(0)
+  maxUses   Int       @default(100)
+  used      Int       @default(0)
+  expiresAt DateTime?
+  active    Boolean   @default(true)
+  createdAt DateTime  @default(now())
+}
+
+// ───────────────────────── CRM & WEBSITE CMS ─────────────────────────
+
+/// role: PARENT | STUDENT | TEACHER | SCHOOL | COMPANY | OTHER
+/// status: NEW | CONTACTED | TRIAL | WON | LOST ; source: HOME_FORM | PLACEMENT_TEST | SCHOOL_DEMO | CONTACT | TRIAL
+model Lead {
+  id        String   @id @default(cuid())
+  name      String
+  phone     String
+  email     String?
+  role      String   @default("PARENT")
+  grade     String?
+  province  String?
+  orgName   String?
+  message   String?
+  source    String   @default("HOME_FORM")
+  utm       String?
+  status    String   @default("NEW")
+  assignee  String?
+  note      String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+/// status: DRAFT | PUBLISHED ; content: Markdown đơn giản
+model Post {
+  id          String    @id @default(cuid())
+  slug        String    @unique
+  title       String
+  excerpt     String?
+  content     String
+  cover       String?
+  category    String    @default("Mẹo học")
+  tags        String?
+  author      String    @default("MEKONG English AI")
+  status      String    @default("DRAFT")
+  seoTitle    String?
+  seoDesc     String?
+  views       Int       @default(0)
+  publishedAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+model Testimonial {
+  id      String  @id @default(cuid())
+  name    String
+  role    String  // "Phụ huynh học sinh lớp 6 – Long Xuyên"
+  avatar  String?
+  content String
+  rating  Int     @default(5)
+  order   Int     @default(0)
+  active  Boolean @default(true)
+}
+
+model Faq {
+  id       String  @id @default(cuid())
+  question String
+  answer   String
+  category String  @default("Chung")
+  order    Int     @default(0)
+  active   Boolean @default(true)
+}
+
+/// Cấu hình website dạng key–value (value là chuỗi JSON). Xem src/lib/settings.ts để biết các key.
+model SiteSetting {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt
+}
+
+// ───────────────────────── AI, ĐÁNH GIÁ, NHẬT KÝ ─────────────────────────
+
+/// kind: STT | LLM | TTS ; units: số giây audio hoặc số token ; cost: VND
+model AiUsageLog {
+  id        String   @id @default(cuid())
+  userId    String?
+  kind      String
+  provider  String   @default("RULES")
+  units     Int      @default(0)
+  cost      Int      @default(0)
+  createdAt DateTime @default(now())
+}
+
+/// Đánh giá thí điểm. phase: PRE | POST | TRANSFER ; chấm blind: rater không biết nhóm
+model Assessment {
+  id         String   @id @default(cuid())
+  studentId  String
+  student    User     @relation("AssessmentStudent", fields: [studentId], references: [id], onDelete: Cascade)
+  phase      String   @default("PRE")
+  taskTitle  String
+  score      Int?
+  aiScore    Int?
+  raterName  String?
+  blind      Boolean  @default(true)
+  note       String?
+  createdAt  DateTime @default(now())
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  action    String   // CREATE | UPDATE | DELETE | LOGIN | IMPERSONATE ...
+  entity    String
+  entityId  String?
+  detail    String?
+  createdAt DateTime @default(now())
+}
