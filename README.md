@@ -3,6 +3,7 @@
 > **Ứng dụng học tiếng Anh thông minh gắn với học tập, đời sống và nghề nghiệp địa phương**  
 > Một sản phẩm giáo dục của **Công ty TNHH Công nghệ Mekong Green AI** (Tỉnh An Giang)
 
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2FDuyKhanh151097%2Fmekong-english-ai&project-name=mekong-english-ai&repository-name=mekong-english-ai)
 [![Next.js 15](https://img.shields.io/badge/Next.js-15.1.0-black?logo=next.js)](https://nextjs.org/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.0+-blue?logo=typescript)](https://www.typescriptlang.org/)
 [![Tailwind CSS](https://img.shields.io/badge/Tailwind-3.4-38B2AC?logo=tailwind-css)](https://tailwindcss.com/)

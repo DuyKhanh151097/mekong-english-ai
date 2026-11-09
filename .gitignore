@@ -28,6 +28,7 @@ prisma/dev.db
 prisma/dev.db-journal
 *.db
 *.db-journal
+!prisma/seed.db
 
 # Uploads
 public/uploads/*
@@ -44,3 +45,5 @@ cookies.txt
 # OS metadata
 .DS_Store
 Thumbs.db
+
+.vercel
